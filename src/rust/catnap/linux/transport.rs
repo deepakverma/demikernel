@@ -5,16 +5,19 @@
 // Imports
 //======================================================================================================================
 
-use crate::runtime::{
-    fail::Fail,
-    memory::DemiBuffer,
-    scheduler::{
-        Yielder,
-        YielderHandle,
+use crate::{
+    demikernel::config::Config,
+    runtime::{
+        fail::Fail,
+        memory::DemiBuffer,
+        scheduler::{
+            Yielder,
+            YielderHandle,
+        },
+        DemiRuntime,
+        SharedDemiRuntime,
+        SharedObject,
     },
-    DemiRuntime,
-    SharedDemiRuntime,
-    SharedObject,
 };
 use ::libc::{
     EAGAIN,
