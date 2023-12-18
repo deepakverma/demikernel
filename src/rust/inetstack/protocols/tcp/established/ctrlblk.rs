@@ -866,6 +866,20 @@ impl SharedControlBlock {
         hdr_window_size
     }
 
+    pub async fn push(&mut self, yielder: Yielder) -> Result<(), Fail> {
+        loop {
+            let rtx_yielder: Yielder = Yielder::new();
+            match self.retransmit_deadline.watch(rtx_yielder).await {
+                Ok(Some(_)) => continue,
+                Ok(None) => {
+                    warn!("Retransmission deadline went off");
+                    return Ok(());
+                },
+                Err(e) => return Err(e),
+            }
+        }
+    }
+
     pub async fn pop(&mut self, size: Option<usize>, yielder: Yielder) -> Result<DemiBuffer, Fail> {
         // TODO: Need to add a way to indicate that the other side closed (i.e. that we've received a FIN).
         // Should we do this via a zero-sized buffer?  Same as with the unsent and unacked queues on the send side?

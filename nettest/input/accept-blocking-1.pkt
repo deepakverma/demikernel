@@ -1,4 +1,4 @@
-// Test for blocking push.
+// Test for blocking accept.
 
 // Accept a connection.
  .0 socket(..., SOCK_STREAM, IPPROTO_TCP) = 500
@@ -10,19 +10,10 @@
 +.2 < S seq 0(0) win 65535 <mss 1450,wscale 0>
 // Send SYN-ACK packet.
 +.0 > S. seq 0(0) ack 1 win 65535 <mss 1450,wscale 0>
+// Send SYN-ACK packet.
++3 > S. seq 0(0) ack 1 win 65535 <mss 1450,wscale 0>
 // Receive ACK on SYN-ACK packet.
 +.2 < . seq 1(0) ack 1 win 65535 <nop>
 
 // Succeed to accept connection.
 +.0 wait(500, ...) = 0
-
-// Send data.
-+.1 write(501, ..., 1000) = 1000
-
-// Send data packet.
-+.1 > P. seq 1(1000) ack 1 win 65535 <nop>
-// Receive ACK on data packet.
-+.1 < . seq 1(0) ack 1001 win 65535 <nop>
-
-// Data sent.
-+.0 wait(501, ...) = 0

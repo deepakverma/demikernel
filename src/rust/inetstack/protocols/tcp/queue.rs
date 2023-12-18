@@ -284,8 +284,12 @@ impl SharedTcpQueue {
             .into())
     }
 
-    pub async fn push_coroutine(&mut self, _yielder: Yielder) -> Result<(), Fail> {
-        Ok(())
+    pub async fn push_coroutine(&mut self, yielder: Yielder) -> Result<(), Fail> {
+        self.state_machine.may_push()?;
+        match self.socket {
+            Socket::Established(ref mut socket) => socket.push(yielder).await,
+            _ => unreachable!("State machine check should ensure that this socket is connected"),
+        }
     }
 
     pub fn pop<F>(&mut self, coroutine_constructor: F) -> Result<QToken, Fail>

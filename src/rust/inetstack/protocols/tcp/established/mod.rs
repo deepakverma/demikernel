@@ -118,6 +118,10 @@ impl EstablishedSocket {
         self.cb.send(buf)
     }
 
+    pub async fn push(&mut self, yielder: Yielder) -> Result<(), Fail> {
+        self.cb.push(yielder).await
+    }
+
     pub async fn pop(&mut self, size: Option<usize>, yielder: Yielder) -> Result<DemiBuffer, Fail> {
         self.cb.pop(size, yielder).await
     }
