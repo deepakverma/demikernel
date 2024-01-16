@@ -42,15 +42,6 @@ pub const SOCK_STREAM: i32 = libc::SOCK_STREAM;
 use ::demikernel::perftools::profiler;
 
 //======================================================================================================================
-// Constants
-//======================================================================================================================
-
-const BUFFER_SIZE: usize = 64;
-
-/// Number of rounds to execute.
-const NROUNDS: usize = 1024;
-
-//======================================================================================================================
 // mksga()
 //======================================================================================================================
 
@@ -230,7 +221,7 @@ impl TcpServer {
         });
     }
 
-    pub fn run(&mut self, local: SocketAddr, nrounds: usize) -> Result<()> {
+    pub fn run(&mut self, local: SocketAddr, nrounds: usize, bufsize: usize) -> Result<()> {
         if let Err(e) = self.libos.bind(self.sockqd, local) {
             anyhow::bail!("bind failed: {:?}", e)
         };
@@ -252,7 +243,7 @@ impl TcpServer {
 
             // Pop data, and sanity check it.
             {
-                let mut recvbuf: [u8; BUFFER_SIZE] = [0; BUFFER_SIZE];
+                let mut recvbuf: Vec<u8> = Vec::with_capacity(bufsize);
                 if let Err(e) = pop_and_wait(
                     &mut self.libos,
                     self.accepted_qd.expect("should be a valid queue descriptor"),
@@ -271,11 +262,7 @@ impl TcpServer {
 
             // Push data.
             {
-                self.sga = Some(mksga(
-                    &mut self.libos,
-                    BUFFER_SIZE,
-                    (i % (u8::MAX as usize - 1) + 1) as u8,
-                )?);
+                self.sga = Some(mksga(&mut self.libos, bufsize, (i % (u8::MAX as usize - 1) + 1) as u8)?);
                 if let Err(e) = push_and_wait(
                     &mut self.libos,
                     self.accepted_qd.expect("should be a valid queue descriptor"),
@@ -342,7 +329,7 @@ impl TcpClient {
         });
     }
 
-    fn run(&mut self, remote: SocketAddr, nrounds: usize) -> Result<()> {
+    fn run(&mut self, remote: SocketAddr, nrounds: usize, bufsize: usize) -> Result<()> {
         if let Err(e) = connect_and_wait(&mut self.libos, self.sockqd, remote) {
             anyhow::bail!("connect and wait failed: {:?}", e);
         }
@@ -353,7 +340,7 @@ impl TcpClient {
 
             // Push data.
             {
-                self.sga = Some(mksga(&mut self.libos, BUFFER_SIZE, fill_char)?);
+                self.sga = Some(mksga(&mut self.libos, bufsize, fill_char)?);
                 if let Err(e) = push_and_wait(
                     &mut self.libos,
                     self.sockqd,
@@ -370,7 +357,7 @@ impl TcpClient {
 
             // Pop data, and sanity check it.
             {
-                let mut recvbuf: [u8; BUFFER_SIZE] = [0; BUFFER_SIZE];
+                let mut recvbuf: Vec<u8> = Vec::with_capacity(bufsize);
                 if let Err(e) = pop_and_wait(&mut self.libos, self.sockqd, &mut recvbuf) {
                     anyhow::bail!("pop and wait failed: {:?}", e);
                 }
@@ -411,7 +398,7 @@ impl Drop for TcpClient {
 
 /// Prints program usage and exits.
 fn usage(program_name: &String) {
-    println!("Usage: {} MODE address", program_name);
+    println!("Usage: {} MODE address NROUNDS BUFSIZE", program_name);
     println!("Modes:");
     println!("  --client    Run program in client mode.");
     println!("  --server    Run program in server mode.");
@@ -424,7 +411,7 @@ fn usage(program_name: &String) {
 pub fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
 
-    if args.len() >= 3 {
+    if args.len() >= 5 {
         // Create the LibOS.
         let libos_name: LibOSName = match LibOSName::from_env() {
             Ok(libos_name) => libos_name.into(),
@@ -436,13 +423,25 @@ pub fn main() -> Result<()> {
         };
         let sockaddr: SocketAddr = SocketAddr::from_str(&args[2])?;
 
+        // Parse nrounds from the command line.
+        let nrounds: usize = match args[3].parse() {
+            Ok(n) => n,
+            Err(_) => anyhow::bail!("NROUNDS must be a valid integer"),
+        };
+
+        // Parse buffer size from the command line.
+        let bufsize: usize = match args[4].parse() {
+            Ok(n) => n,
+            Err(_) => anyhow::bail!("BUFSIZE must be a valid integer"),
+        };
+
         // Invoke the appropriate peer.
         if args[1] == "--server" {
             let mut server: TcpServer = TcpServer::new(libos)?;
-            return server.run(sockaddr, NROUNDS);
+            return server.run(sockaddr, nrounds, bufsize);
         } else if args[1] == "--client" {
             let mut client: TcpClient = TcpClient::new(libos)?;
-            return client.run(sockaddr, NROUNDS);
+            return client.run(sockaddr, nrounds, bufsize);
         }
     }
 

@@ -16,7 +16,19 @@ catcollar:
       nclients: 32
       run_mode: concurrent
       who_closes: server
-  tcp_ping_pong: {}
+  tcp_ping_pong:
+    scenario0:
+      bufsize: 64
+      nrounds: 128
+    scenario1:
+      bufsize: 64
+      nrounds: 256
+    scenario2:
+      bufsize: 64
+      nrounds: 512
+    scenario3:
+      bufsize: 64
+      nrounds: 1024
   tcp_push_pop: {}
   udp_ping_pong: {}
   udp_push_pop: {}
@@ -82,7 +94,19 @@ catloop:
     scenario5:
       nclients: 1
       scenario: pop_async_close_pending_wait
-  tcp_ping_pong: {}
+  tcp_ping_pong:
+    scenario0:
+      bufsize: 64
+      nrounds: 128
+    scenario1:
+      bufsize: 64
+      nrounds: 256
+    scenario2:
+      bufsize: 64
+      nrounds: 512
+    scenario3:
+      bufsize: 64
+      nrounds: 1024
   tcp_push_pop: {}
 catnap:
   tcp_close:
@@ -123,7 +147,19 @@ catnap:
       nclients: 32
       nrequests: 100
       run_mode: concurrent
-  tcp_ping_pong: {}
+  tcp_ping_pong:
+    scenario0:
+      bufsize: 64
+      nrounds: 128
+    scenario1:
+      bufsize: 64
+      nrounds: 256
+    scenario2:
+      bufsize: 64
+      nrounds: 512
+    scenario3:
+      bufsize: 64
+      nrounds: 1024
   tcp_push_pop: {}
   tcp_wait:
     scenario0:
@@ -147,7 +183,19 @@ catnap:
   udp_ping_pong: {}
   udp_push_pop: {}
 catnip:
-  tcp_ping_pong: {}
+  tcp_ping_pong:
+    scenario0:
+      bufsize: 64
+      nrounds: 128
+    scenario1:
+      bufsize: 64
+      nrounds: 256
+    scenario2:
+      bufsize: 64
+      nrounds: 512
+    scenario3:
+      bufsize: 64
+      nrounds: 1024
   tcp_push_pop: {}
   udp_ping_pong: {}
   udp_push_pop: {}
@@ -173,7 +221,19 @@ catnip:
       nrequests: 100
       run_mode: concurrent
 catpowder:
-  tcp_ping_pong: {}
+  tcp_ping_pong:
+    scenario0:
+      bufsize: 64
+      nrounds: 128
+    scenario1:
+      bufsize: 64
+      nrounds: 256
+    scenario2:
+      bufsize: 64
+      nrounds: 512
+    scenario3:
+      bufsize: 64
+      nrounds: 1024
   tcp_push_pop: {}
   udp_ping_pong: {}
   udp_push_pop: {}
