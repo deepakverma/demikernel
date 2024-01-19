@@ -344,65 +344,38 @@ def job_test_unit_rust_windows(repo: str, libos: str, is_debug: bool, server: st
     return wait_and_report(test_name, log_directory, jobs, True)
 
 
-def job_test_integration_tcp_rust(
-        repo: str, libos: str, is_debug: bool, server: str, client: str, server_addr: str, client_addr: str,
-        is_sudo: bool, config_path: str, log_directory: str) -> bool:
-    server_args: str = "--local-address {}:12345 --remote-address {}:23456".format(
-        server_addr, client_addr)
-    client_args: str = "--local-address {}:23456 --remote-address {}:12345".format(
-        client_addr, server_addr)
-    server_cmd: str = "test-integration-rust TEST_INTEGRATION=tcp-test LIBOS={} ARGS=\\\"{}\\\"".format(
-        libos, server_args)
-    client_cmd: str = "test-integration-rust TEST_INTEGRATION=tcp-test LIBOS={} ARGS=\\\"{}\\\"".format(
-        libos, client_args)
-    test_name = "integration-test"
+def job_test_integration(
+        test_type: str, repo: str, libos: str, is_debug: bool, server: str, client: str, server_addr: str, client_addr: str,
+        is_sudo: bool, config_path: str, log_directory: str, delay: float = 0.0, run_mode: str = None) -> bool:
+    if test_type in ["tcp", "tcp_windows"]:
+        server_args: str = "--local-address {}:12345 --remote-address {}:23456".format(
+            server_addr, client_addr)
+        client_args: str = "--local-address {}:23456 --remote-address {}:12345".format(
+            client_addr, server_addr)
+        cmd_format = "test-integration-rust TEST_INTEGRATION=tcp-test LIBOS={} ARGS='{}'" if test_type == "tcp_windows" else "test-integration-rust TEST_INTEGRATION=tcp-test LIBOS={} ARGS=\\\"{}\\\""
+        server_cmd: str = cmd_format.format(libos, server_args)
+        client_cmd: str = cmd_format.format(libos, client_args)
+    elif test_type == "pipe":
+        server_args: str = "--peer server --pipe-name {}:12345 --run-mode {}".format(
+            server_addr, run_mode)
+        client_args: str = "--peer client --pipe-name {}:12345 --run-mode {}".format(
+            server_addr, run_mode)
+        server_cmd: str = "test-integration-rust TEST_INTEGRATION=pipe-test LIBOS={} ARGS=\\\"{}\\\"".format(
+            libos, server_args)
+        client_cmd: str = "test-integration-rust TEST_INTEGRATION=pipe-test LIBOS={} ARGS=\\\"{}\\\"".format(
+            libos, client_args)
+    else:
+        raise ValueError("Invalid test type")
+
+    test_name = "integration-test" + ("-" + run_mode if run_mode else "")
     jobs: dict[str, subprocess.Popen[str]] = {}
-    jobs[test_name + "-server-" +
-         server] = remote_run(server, repo, is_debug, server_cmd, is_sudo, config_path)
-    if libos != "catloop":
-        jobs[test_name + "-client-" + client] = remote_run(
-            client, repo, is_debug, client_cmd, is_sudo, config_path)
-    return wait_and_report(test_name, log_directory, jobs, True)
-
-
-def job_test_integration_tcp_rust_windows(
-        repo: str, libos: str, is_debug: bool, server: str, client: str, server_addr: str, client_addr: str,
-        is_sudo: bool, config_path: str, log_directory: str) -> bool:
-    server_args: str = "--local-address {}:12345 --remote-address {}:23456".format(
-        server_addr, client_addr)
-    client_args: str = "--local-address {}:23456 --remote-address {}:12345".format(
-        client_addr, server_addr)
-    server_cmd: str = "test-integration-rust TEST_INTEGRATION=tcp-test LIBOS={} ARGS='{}'".format(
-        libos, server_args)
-    client_cmd: str = "test-integration-rust TEST_INTEGRATION=tcp-test LIBOS={} ARGS='{}'".format(
-        libos, client_args)
-    test_name = "integration-test"
-    jobs: dict[str, subprocess.Popen[str]] = {}
-    jobs[test_name + "-server-" +
-         server] = remote_run_windows(server, repo, is_debug, server_cmd, is_sudo, config_path)
-    jobs[test_name + "-client-" + client] = remote_run_windows(
-        client, repo, is_debug, client_cmd, is_sudo, config_path)
-    return wait_and_report(test_name, log_directory, jobs, True)
-
-
-def job_test_integration_pipe_rust(
-        repo: str, libos: str, is_debug: bool, run_mode: str, server: str, client: str, server_addr: str,
-        delay: float, is_sudo: bool, config_path: str, log_directory: str) -> bool:
-    server_args: str = "--peer server --pipe-name {}:12345 --run-mode {}".format(
-        server_addr, run_mode)
-    client_args: str = "--peer client --pipe-name {}:12345 --run-mode {}".format(
-        server_addr, run_mode)
-    server_cmd: str = "test-integration-rust TEST_INTEGRATION=pipe-test LIBOS={} ARGS=\\\"{}\\\"".format(
-        libos, server_args)
-    client_cmd: str = "test-integration-rust TEST_INTEGRATION=pipe-test LIBOS={} ARGS=\\\"{}\\\"".format(
-        libos, client_args)
-    test_name = "integration-test" + "-" + run_mode
-    jobs: dict[str, subprocess.Popen[str]] = {}
-    jobs[test_name + "-server-" +
-         server] = remote_run(server, repo, is_debug, server_cmd, is_sudo, config_path)
-    if run_mode != "standalone":
-        time.sleep(delay)
-        jobs[test_name + "-client-" + client] = remote_run(
+    remote_run_func = remote_run_windows if test_type == "tcp_windows" else remote_run
+    jobs[test_name + "-server-" + server] = remote_run_func(
+        server, repo, is_debug, server_cmd, is_sudo, config_path)
+    if test_type != "pipe" or (test_type == "pipe" and run_mode != "standalone"):
+        if test_type == "pipe":
+            time.sleep(delay)
+        jobs[test_name + "-client-" + client] = remote_run_func(
             client, repo, is_debug, client_cmd, is_sudo, config_path)
     return wait_and_report(test_name, log_directory, jobs, True)
 
@@ -469,7 +442,8 @@ def run_pipeline(
                                                                   is_sudo, config_path, log_directory)
                 # FIXME: https://github.com/microsoft/demikernel/issues/1030
                 if False:
-                    status["integration_tests"] = job_test_integration_tcp_rust_windows(
+                    status["integration_tests"] = job_test_integration(
+                        "tcp_windows",
                         repository, libos, is_debug, server, client, server_addr, client_addr, is_sudo, config_path, log_directory)
 
         # STEP 4: Run system tests.
@@ -506,22 +480,28 @@ def run_pipeline(
             status["unit_tests"] = job_test_unit_rust(repository, libos, is_debug, server, client,
                                                       is_sudo, config_path, log_directory)
             if libos == "catnap" or libos == "catloop":
-                status["integration_tests"] = job_test_integration_tcp_rust(
+                status["integration_tests"] = job_test_integration(
+                    "tcp",
                     repository, libos, is_debug, server, client, server_addr, client_addr, is_sudo, config_path, log_directory)
             elif libos == "catmem":
-                status["integration_tests"] = job_test_integration_pipe_rust(
+                status["integration_tests"] = job_test_integration(
+                    "pipe",
                     repository, libos, is_debug, "standalone", server, client, server_addr, delay, is_sudo,
                     config_path, log_directory)
-                status["integration_tests"] = job_test_integration_pipe_rust(
+                status["integration_tests"] = job_test_integration(
+                    "pipe",
                     repository, libos, is_debug, "push-wait", server, client, server_addr, delay, is_sudo,
                     config_path, log_directory)
-                status["integration_tests"] = job_test_integration_pipe_rust(
+                status["integration_tests"] = job_test_integration(
+                    "pipe",
                     repository, libos, is_debug, "pop-wait", server, client, server_addr, delay, is_sudo,
                     config_path, log_directory)
-                status["integration_tests"] = job_test_integration_pipe_rust(
+                status["integration_tests"] = job_test_integration(
+                    "pipe",
                     repository, libos, is_debug, "push-wait-async", server, client, server_addr, delay, is_sudo,
                     config_path, log_directory)
-                status["integration_tests"] = job_test_integration_pipe_rust(
+                status["integration_tests"] = job_test_integration(
+                    "pipe",
                     repository, libos, is_debug, "pop-wait-async", server, client, server_addr, delay, is_sudo,
                     config_path, log_directory)
 
