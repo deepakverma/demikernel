@@ -150,6 +150,19 @@ const _: () = assert!(std::mem::size_of::<MetaData>() == 2 * arch::CPU_DATA_CACH
 const METADATA_F_INDIRECT: u64 = 1 << 62;
 
 impl MetaData {
+    /// Initializes the MetaData struct.
+    fn init(&mut self, pkt_len: u32, buf_len: u16, buf_addr: *mut u8) {
+        self.buf_addr = buf_addr;
+        self.data_off = 0;
+        self.refcnt = 1;
+        self.nb_segs = 1;
+        self.ol_flags = 0;
+        self.pkt_len = pkt_len;
+        self.data_len = buf_len;
+        self.buf_len = buf_len;
+        self.next = None;
+    }
+
     // Note on Reference Counts:
     // Since we are currently single-threaded, there is no need to use atomic operations for refcnt manipulations.
     // We should rework the implementation of inc_refcnt() and dec_refcnt() to use atomic operations if this changes.
@@ -342,35 +355,29 @@ impl DemiBuffer {
     // propagate actual allocation failures outward, if we determine that would be helpful.  For now, we stick to the
     // status quo, and assume this allocation never fails.
     pub fn new(capacity: u16) -> Self {
-        // Allocate some memory off the heap.
-        let mut temp: NonNull<MetaData> = allocate_metadata_data(capacity);
-
-        // Initialize the MetaData.
-        {
-            // Safety: This is safe, as temp is aligned, dereferenceable, and metadata isn't aliased in this block.
-            let metadata: &mut MetaData = unsafe { temp.as_mut() };
-
-            // Point buf_addr at the newly allocated data space (if any).
+        let get_buf_addr = |capacity: u16, segment: NonNull<MetaData>| -> *mut u8 {
             if capacity == 0 {
-                // No direct data, so don't point buf_addr at anything.
-                metadata.buf_addr = null_mut();
+                null_mut()
             } else {
-                // The direct data immediately follows the MetaData struct.
-                let address: *mut u8 = temp.cast::<u8>().as_ptr();
-                // Safety: The call to offset is safe, as the provided offset is known to be within the allocation.
-                metadata.buf_addr = unsafe { address.offset(size_of::<MetaData>() as isize) };
+                let address: *mut u8 = segment.cast::<u8>().as_ptr();
+                unsafe { address.offset(size_of::<MetaData>() as isize) }
+            }
+        };
+
+        // Allocate first segment.
+        let temp: NonNull<MetaData> = {
+            // Allocate some memory off the heap.
+            let mut temp: NonNull<MetaData> = allocate_metadata_data(capacity);
+
+            // Initialize the MetaData.
+            {
+                // Safety: This is safe, as temp is aligned, dereferenceable, and metadata isn't aliased in this block.
+                let metadata: &mut MetaData = unsafe { temp.as_mut() };
+                metadata.init(capacity as u32, capacity, get_buf_addr(capacity, temp));
             }
 
-            // Set field values as appropriate.
-            metadata.data_off = 0;
-            metadata.refcnt = 1;
-            metadata.nb_segs = 1;
-            metadata.ol_flags = 0;
-            metadata.pkt_len = capacity as u32;
-            metadata.data_len = capacity;
-            metadata.buf_len = capacity;
-            metadata.next = None;
-        }
+            temp
+        };
 
         // Embed the buffer type into the lower bits of the pointer.
         // Return the new DemiBuffer.
@@ -1073,30 +1080,23 @@ impl TryFrom<&[u8]> for DemiBuffer {
             let metadata: &mut MetaData = unsafe { temp.as_mut() };
 
             // Point buf_addr at the newly allocated data space (if any).
-            if size == 0 {
+            let buf_addr: *mut u8 = if size == 0 {
                 // No direct data, so don't point buf_addr at anything.
-                metadata.buf_addr = null_mut();
+                null_mut()
             } else {
                 // The direct data immediately follows the MetaData struct.
                 let address: *mut u8 = temp.cast::<u8>().as_ptr();
                 // Safety: The call to offset is safe, as the provided offset is known to be within the allocation.
-                metadata.buf_addr = unsafe { address.offset(size_of::<MetaData>() as isize) };
+                unsafe { address.offset(size_of::<MetaData>() as isize) }
+            };
 
-                // Copy the data from the slice into the DemiBuffer.
-                // Safety: This is safe, as the src/dst argument pointers are valid for reads/writes of `size` bytes,
-                // are aligned (trivial for u8 pointers), and the regions they specify do not overlap one another.
-                unsafe { ptr::copy_nonoverlapping(slice.as_ptr(), metadata.buf_addr, size as usize) };
-            }
+            // Copy the data from the slice into the DemiBuffer.
+            // Safety: This is safe, as the src/dst argument pointers are valid for reads/writes of `size` bytes,
+            // are aligned (trivial for u8 pointers), and the regions they specify do not overlap one another.
+            unsafe { ptr::copy_nonoverlapping(slice.as_ptr(), buf_addr, size as usize) };
 
             // Set field values as appropriate.
-            metadata.data_off = 0;
-            metadata.refcnt = 1;
-            metadata.nb_segs = 1;
-            metadata.ol_flags = 0;
-            metadata.pkt_len = size as u32;
-            metadata.data_len = size;
-            metadata.buf_len = size;
-            metadata.next = None;
+            metadata.init(size as u32, size, buf_addr)
         }
 
         // Embed the buffer type into the lower bits of the pointer.
