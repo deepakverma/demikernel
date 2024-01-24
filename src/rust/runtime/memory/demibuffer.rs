@@ -373,11 +373,9 @@ impl DemiBuffer {
         }
 
         // Embed the buffer type into the lower bits of the pointer.
-        let tagged: NonNull<MetaData> = temp.with_addr(temp.addr() | Tag::Heap);
-
         // Return the new DemiBuffer.
         DemiBuffer {
-            tagged_ptr: tagged,
+            tagged_ptr: tag_ptr(temp, Tag::Heap),
             _phantom: PhantomData,
         }
     }
@@ -405,7 +403,7 @@ impl DemiBuffer {
     pub unsafe fn from_mbuf(mbuf_ptr: *mut rte_mbuf) -> Self {
         // Convert the raw pointer into a NonNull and add a tag indicating it is a DPDK buffer (i.e. a MBuf).
         let temp: NonNull<MetaData> = NonNull::new_unchecked(mbuf_ptr as *mut _);
-        let tagged: NonNull<MetaData> = temp.with_addr(temp.addr() | Tag::Dpdk);
+        let tagged: NonNull<MetaData> = tag_ptr(temp, Tag::Dpdk);
 
         DemiBuffer {
             tagged_ptr: tagged,
@@ -761,6 +759,11 @@ impl DemiBuffer {
 // Helper Functions
 // ----------------
 
+// Add a tag to a MetaData address.
+fn tag_ptr(metadata: NonNull<MetaData>, tag: Tag) -> NonNull<MetaData> {
+    metadata.with_addr(metadata.addr() | tag)
+}
+
 // Allocates the MetaData (plus the space for any directly attached data) for a new heap-allocated DemiBuffer.
 fn allocate_metadata_data(direct_data_size: u16) -> NonNull<MetaData> {
     // We need space for the MetaData struct, plus any extra memory for directly attached data.
@@ -904,7 +907,7 @@ impl Clone for DemiBuffer {
                 }
 
                 // Embed the buffer type into the lower bits of the pointer.
-                let tagged: NonNull<MetaData> = head.with_addr(head.addr() | Tag::Heap);
+                let tagged: NonNull<MetaData> = tag_ptr(head, Tag::Heap);
 
                 // Return the new DemiBuffer.
                 DemiBuffer {
@@ -1097,7 +1100,7 @@ impl TryFrom<&[u8]> for DemiBuffer {
         }
 
         // Embed the buffer type into the lower bits of the pointer.
-        let tagged: NonNull<MetaData> = temp.with_addr(temp.addr() | Tag::Heap);
+        let tagged: NonNull<MetaData> = tag_ptr(temp, Tag::Heap);
 
         // Return the new DemiBuffer.
         Ok(DemiBuffer {
