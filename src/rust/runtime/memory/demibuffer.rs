@@ -251,7 +251,7 @@ impl DemiBuffer {
 
     // Implementation Note:
     // This function is replacing the new() function of DataBuffer, which could return failure.  However, the only
-    // failure it actually reported was if the new DataBuffer request was for zero size.  A seperate empty() function
+    // failure it actually reported was if the new DataBuffer request was for zero size.  A separate empty() function
     // was provided to allocate zero-size buffers.  This new implementation does not have a special case for this,
     // instead, zero is a valid argument to new().  So we no longer need the failure return case of this function.
     //
@@ -530,7 +530,7 @@ impl DemiBuffer {
     /// Provides a raw pointer to the buffer data.
     ///
     /// The reference count is not affected in any way and the DemiBuffer is not consumed.  The pointer is valid for as
-    /// long as there is a DemiBuffer in existance that is holding a reference on this data.
+    /// long as there is a DemiBuffer in existence that is holding a reference on this data.
     // This function is not marked unsafe, as the unsafe act is dereferencing the returned pointer, not providing it.
     pub fn as_ptr(&self) -> *const u8 {
         // TODO: Review having this "match", since MetaData and MBuf are laid out the same, these are equivalent cases.
@@ -771,7 +771,7 @@ impl Clone for DemiBuffer {
                         }
                     }
 
-                    // Incrememnt the reference count on the data.  It resides in the MetaData structure that the data
+                    // Increment the reference count on the data.  It resides in the MetaData structure that the data
                     // is directly attached to.  If the buffer we're cloning is itself an indirect buffer, then we need
                     // to find the original direct buffer in order to increment the correct reference count.
                     if original.ol_flags & METADATA_F_INDIRECT == 0 {
@@ -779,7 +779,7 @@ impl Clone for DemiBuffer {
                         original.inc_refcnt();
                     } else {
                         // Cloning an indirect buffer.  Increment the ref count on the direct buffer with the data.
-                        // The direct buffer's MetaData struct should immediately preceed the actual data.
+                        // The direct buffer's MetaData struct should immediately precede the actual data.
                         let offset: isize = -(size_of::<MetaData>() as isize);
                         let direct: &mut MetaData = unsafe {
                             // Safety: The offset call is safe as `offset` is known to be "in bounds" for buf_addr.
