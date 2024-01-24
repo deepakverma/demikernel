@@ -275,7 +275,7 @@ impl<T: NetworkTransport> SharedNetworkQueue<T> {
     ) -> Result<(Option<SocketAddr>, DemiBuffer), Fail> {
         self.state_machine.may_pop()?;
         let size: usize = size.unwrap_or(limits::RECVBUF_SIZE_MAX);
-        let mut buf: DemiBuffer = DemiBuffer::new(size as u16);
+        let mut buf: DemiBuffer = DemiBuffer::new(size);
 
         // Check that we allocated a DemiBuffer that is big enough.
         debug_assert_eq!(buf.len(), size);

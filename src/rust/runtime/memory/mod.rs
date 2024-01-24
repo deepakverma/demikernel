@@ -65,7 +65,7 @@ pub trait MemoryRuntime {
         }
 
         // First allocate the underlying DemiBuffer.
-        let buf: DemiBuffer = DemiBuffer::new(size as u16);
+        let buf: DemiBuffer = DemiBuffer::new(size);
 
         // Create a scatter-gather segment to expose the DemiBuffer to the user.
         let data: *const u8 = buf.as_ptr();

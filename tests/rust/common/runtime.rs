@@ -92,7 +92,7 @@ impl NetworkRuntime for SharedDummyRuntime {
         // For this test harness, we 2^16 bytes (u16::MAX) as our limit.
         assert!(header_size + body_size < u16::MAX as usize);
 
-        let mut buf: DemiBuffer = DemiBuffer::new((header_size + body_size) as u16);
+        let mut buf: DemiBuffer = DemiBuffer::new(header_size + body_size);
         pkt.write_header(&mut buf[..header_size]);
         if let Some(body) = pkt.take_body() {
             buf[header_size..].copy_from_slice(&body[..]);

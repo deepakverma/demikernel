@@ -570,7 +570,7 @@ impl CatcollarLibOS {
 
         let buf: DemiBuffer = {
             let size: usize = size.unwrap_or(limits::RECVBUF_SIZE_MAX);
-            DemiBuffer::new(size as u16)
+            DemiBuffer::new(size)
         };
 
         let fd: RawFd = self.get_queue_fd(&qd)?;

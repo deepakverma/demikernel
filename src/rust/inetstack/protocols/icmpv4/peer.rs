@@ -232,7 +232,7 @@ impl<N: NetworkRuntime> SharedIcmpv4Peer<N> {
         let dst_link_addr: MacAddress = self.arp.query(dst_ipv4_addr, &Yielder::new()).await?;
         debug!("ARP query complete ({} -> {})", dst_ipv4_addr, dst_link_addr);
 
-        let data: DemiBuffer = DemiBuffer::new(datagram::ICMPV4_ECHO_REQUEST_MESSAGE_SIZE);
+        let data: DemiBuffer = DemiBuffer::new(datagram::ICMPV4_ECHO_REQUEST_MESSAGE_SIZE as usize);
 
         let msg: Icmpv4Message = Icmpv4Message::new(
             Ethernet2Header::new(dst_link_addr, self.local_link_addr, EtherType2::Ipv4),

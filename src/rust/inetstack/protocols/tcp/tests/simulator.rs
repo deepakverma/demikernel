@@ -927,7 +927,7 @@ impl Simulation {
     fn serialize_segment(pkt: TcpSegment) -> DemiBuffer {
         let header_size: usize = pkt.header_size();
         let body_size: usize = pkt.body_size();
-        let mut buf: DemiBuffer = DemiBuffer::new((header_size + body_size) as u16);
+        let mut buf: DemiBuffer = DemiBuffer::new(header_size + body_size);
         pkt.write_header(&mut buf[..header_size]);
         if let Some(body) = pkt.take_body() {
             buf[header_size..].copy_from_slice(&body[..]);
@@ -938,7 +938,7 @@ impl Simulation {
     /// Cooks a buffer.
     fn cook_buffer(size: usize, stamp: Option<u8>) -> DemiBuffer {
         assert!(size < u16::MAX as usize);
-        let mut buf: DemiBuffer = DemiBuffer::new(size as u16);
+        let mut buf: DemiBuffer = DemiBuffer::new(size);
         for i in 0..size {
             buf[i] = stamp.unwrap_or(i as u8);
         }

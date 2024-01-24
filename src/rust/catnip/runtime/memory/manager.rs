@@ -145,7 +145,7 @@ impl MemoryManager {
             unsafe { DemiBuffer::from_mbuf(mbuf_ptr) }
         } else {
             // Allocate a heap-managed buffer.
-            DemiBuffer::new(size as u16)
+            DemiBuffer::new(size)
         };
 
         // Create a scatter-gather segment to expose the DemiBuffer to the user.

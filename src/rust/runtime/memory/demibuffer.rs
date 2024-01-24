@@ -277,6 +277,15 @@ impl MetaData {
 
         true
     }
+
+    // Chains two MetaData structs together.
+    #[inline]
+    fn chain(&mut self, mut last_segment: NonNull<Self>, next_segment: NonNull<Self>) {
+        let last: &mut MetaData = unsafe { last_segment.as_mut() };
+        last.next = Some(next_segment);
+        // Bump the number of segments.
+        self.nb_segs += 1;
+    }
 }
 
 // DemiBuffer type tags.
@@ -354,7 +363,7 @@ impl DemiBuffer {
     // return an error condition.  But since we call the allocator directly in this implementation, we could now
     // propagate actual allocation failures outward, if we determine that would be helpful.  For now, we stick to the
     // status quo, and assume this allocation never fails.
-    pub fn new(capacity: u16) -> Self {
+    pub fn new(capacity: usize) -> Self {
         let get_buf_addr = |capacity: u16, segment: NonNull<MetaData>| -> *mut u8 {
             if capacity == 0 {
                 null_mut()
@@ -365,24 +374,68 @@ impl DemiBuffer {
         };
 
         // Allocate first segment.
-        let temp: NonNull<MetaData> = {
+        let mut first_segment: NonNull<MetaData> = {
+            let segment_capacity: u16 = if capacity > u16::MAX as usize {
+                u16::MAX
+            } else {
+                capacity as u16
+            };
+
             // Allocate some memory off the heap.
-            let mut temp: NonNull<MetaData> = allocate_metadata_data(capacity);
+            let mut first_segment: NonNull<MetaData> = allocate_metadata_data(segment_capacity);
 
             // Initialize the MetaData.
             {
                 // Safety: This is safe, as temp is aligned, dereferenceable, and metadata isn't aliased in this block.
-                let metadata: &mut MetaData = unsafe { temp.as_mut() };
-                metadata.init(capacity as u32, capacity, get_buf_addr(capacity, temp));
+                let metadata: &mut MetaData = unsafe { first_segment.as_mut() };
+                metadata.init(
+                    capacity as u32,
+                    segment_capacity,
+                    get_buf_addr(segment_capacity, first_segment),
+                );
             }
 
-            temp
+            first_segment
         };
+
+        // Allocate more segments.
+        {
+            let mut last_segment: NonNull<MetaData> = first_segment;
+            for offset in (u16::MAX as usize..capacity).step_by(u16::MAX as usize) {
+                let segment_capacity: u16 = if (offset + u16::MAX as usize) > capacity {
+                    (capacity - offset) as u16
+                } else {
+                    u16::MAX
+                };
+
+                // Allocate some memory off the heap.
+                let mut next_segment: NonNull<MetaData> = allocate_metadata_data(segment_capacity);
+
+                // Initialize the MetaData.
+                {
+                    // Safety: This is safe, as temp is aligned, dereferenceable, and metadata isn't aliased in this block.
+                    let metadata: &mut MetaData = unsafe { next_segment.as_mut() };
+                    metadata.init(
+                        capacity as u32,
+                        segment_capacity,
+                        get_buf_addr(segment_capacity, next_segment),
+                    );
+                }
+
+                // Chain segments.
+                {
+                    // Safety: This is safe, as temp is aligned, dereferenceable, and metadata isn't aliased in this block.
+                    let first: &mut MetaData = unsafe { first_segment.as_mut() };
+                    first.chain(last_segment, next_segment);
+                }
+                last_segment = next_segment;
+            }
+        }
 
         // Embed the buffer type into the lower bits of the pointer.
         // Return the new DemiBuffer.
         DemiBuffer {
-            tagged_ptr: tag_ptr(temp, Tag::Heap),
+            tagged_ptr: tag_ptr(first_segment, Tag::Heap),
             _phantom: PhantomData,
         }
     }
@@ -437,6 +490,41 @@ impl DemiBuffer {
     // Note that while we return a usize here (for convenience), the value is guaranteed to never exceed u16::MAX.
     pub fn len(&self) -> usize {
         self.as_metadata().data_len as usize
+    }
+
+    /// Get the next buffer in the chain, if any.
+    pub fn next(&self) -> Option<DemiBuffer> {
+        match self.get_tag() {
+            Tag::Heap => match self.as_metadata().next {
+                Some(metadata) => {
+                    let next: DemiBuffer = Self {
+                        tagged_ptr: tag_ptr(metadata, self.get_tag()),
+                        _phantom: PhantomData,
+                    };
+                    next.as_metadata().inc_refcnt();
+                    Some(next)
+                },
+
+                None => None,
+            },
+
+            #[cfg(feature = "libdpdk")]
+            Tag::Dpdk => {
+                let mbuf: *mut rte_mbuf = self.as_mbuf();
+                let next_mbuf: *mut rte_mbuf = unsafe {
+                    // Safety: The `mbuf` dereference below is safe, as it is aligned and dereferenceable.
+                    (*mbuf).next
+                };
+
+                if next_mbuf == std::ptr::null_mut() {
+                    None
+                } else {
+                    let result: DemiBuffer = unsafe { DemiBuffer::from_mbuf(next_mbuf) };
+                    result.as_metadata().inc_refcnt();
+                    Some(result)
+                }
+            },
+        }
     }
 
     /// Removes `nbytes` bytes from the beginning of the `DemiBuffer` chain.

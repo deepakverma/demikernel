@@ -94,7 +94,7 @@ impl DummyLibOS {
     pub fn cook_data(&self, size: usize) -> Result<demi_sgarray_t, Fail> {
         let fill_char: u8 = b'a';
 
-        let mut buf: DemiBuffer = DemiBuffer::new(size as u16);
+        let mut buf: DemiBuffer = DemiBuffer::new(size);
         for a in &mut buf[..] {
             *a = fill_char;
         }

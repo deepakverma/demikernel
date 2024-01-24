@@ -185,7 +185,7 @@ impl ActiveSocketData {
     /// queue.
     /// TODO: Incoming queue should possibly be byte oriented.
     pub fn poll_recv(&mut self) {
-        let mut buf: DemiBuffer = DemiBuffer::new(limits::POP_SIZE_MAX as u16);
+        let mut buf: DemiBuffer = DemiBuffer::new(limits::POP_SIZE_MAX);
         match self
             .socket
             .recv_from(unsafe { std::slice::from_raw_parts_mut(buf.as_mut_ptr() as *mut MaybeUninit<u8>, buf.len()) })
@@ -212,8 +212,11 @@ impl ActiveSocketData {
 
     /// Pushes data to the socket. Blocks until completion.
     pub async fn push(&mut self, addr: Option<SocketAddr>, buf: DemiBuffer, yielder: &Yielder) -> Result<(), Fail> {
-        self.send_queue.push((addr, buf, yielder.get_handle()));
-        yielder.yield_until_wake().await
+        for b in std::iter::successors(Some(buf), DemiBuffer::next) {
+            self.send_queue.push((addr, b, yielder.get_handle()));
+            yielder.yield_until_wake().await?;
+        }
+        Ok(())
     }
 
     /// Pops data from the socket. Blocks until some data is found but does not wait until the buf has reached [size].

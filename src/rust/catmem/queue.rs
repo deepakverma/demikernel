@@ -145,7 +145,7 @@ impl SharedCatmemQueue {
     /// shared memory ring, this function returns an error.
     pub async fn do_pop(&mut self, size: Option<usize>, yielder: Yielder) -> Result<(DemiBuffer, bool), Fail> {
         let size: usize = size.unwrap_or(limits::RECVBUF_SIZE_MAX);
-        let mut buf: DemiBuffer = DemiBuffer::new(size as u16);
+        let mut buf: DemiBuffer = DemiBuffer::new(size);
         let eof: bool = loop {
             match self.ring.try_pop(&mut buf) {
                 Ok((len, eof)) => {

@@ -44,7 +44,7 @@ impl NetworkRuntime for LinuxRuntime {
         let body_size: usize = pkt.body_size();
 
         assert!(header_size + body_size < u16::MAX as usize);
-        let mut buf: DemiBuffer = DemiBuffer::new((header_size + body_size) as u16);
+        let mut buf: DemiBuffer = DemiBuffer::new(header_size + body_size);
 
         pkt.write_header(&mut buf[..header_size]);
         if let Some(body) = pkt.take_body() {
