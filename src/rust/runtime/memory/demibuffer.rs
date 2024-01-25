@@ -159,6 +159,13 @@ impl MetaData {
     // Increments the reference count and returns the new value.
     #[inline]
     fn inc_refcnt(&mut self) -> u16 {
+        // Ensure that this segment is a header segment.
+        // This assert should not be triggered, because a runtime check was performed in the caller.
+        debug_assert!(
+            self.is_header_segment(),
+            "cannot increment reference count on non-header segment"
+        );
+
         self.refcnt += 1;
         self.refcnt
     }
@@ -166,6 +173,13 @@ impl MetaData {
     // Decrements the reference count and returns the new value.
     #[inline]
     fn dec_refcnt(&mut self) -> u16 {
+        // Ensure that this segment is a header segment.
+        // This assert should not be triggered, because a runtime check was performed in the caller.
+        debug_assert!(
+            self.is_header_segment(),
+            "cannot decrement reference count on non-header segment"
+        );
+
         // We should never decrement an already zero reference count.  Check this on debug builds.
         debug_assert_ne!(self.refcnt, 0);
         self.refcnt -= 1;
@@ -175,6 +189,13 @@ impl MetaData {
     // Gets the MetaData for the last segment in the buffer chain.
     #[inline]
     fn get_last_segment(&mut self) -> &mut MetaData {
+        // Ensure that this segment is a header segment.
+        // This assert should not be triggered, because a runtime check was performed in the caller.
+        debug_assert!(
+            self.is_header_segment(),
+            "cannot get last segment from a non-header segment"
+        );
+
         let mut md: &mut MetaData = self;
         while md.next.is_some() {
             // Safety: The call to as_mut is safe, as the pointer is aligned and dereferenceable, and the MetaData
@@ -182,6 +203,66 @@ impl MetaData {
             md = unsafe { md.next.unwrap().as_mut() };
         }
         &mut *md
+    }
+
+    ///
+    /// **Description**
+    ///
+    /// Checks if the target [MetaData] refers to a header segment or not.
+    ///
+    /// **Return Value**
+    ///
+    /// If the target [MetaData] refers to a header segment, `true` is returned. Otherwise, `false` is returned instead.
+    ///
+    /// **Additional Information**
+    ///
+    /// This function should match the behavior provided by DPDK's `rte_mbuf_check()` function.
+    ///
+    fn is_header_segment(&self) -> bool {
+        // Check if length of segment is valid.
+        let mut metadata: &MetaData = self;
+        if metadata.data_len as u32 > metadata.pkt_len {
+            return false;
+        }
+
+        let mut nb_segs: u16 = metadata.nb_segs;
+        let mut pkt_len: u32 = metadata.pkt_len;
+
+        // Traverse the chain of segments.
+        loop {
+            // Check if data offset overflows buffer length.
+            if metadata.data_off > metadata.buf_len {
+                return false;
+            }
+            // Check if data length overflows segment length.
+            if (metadata.data_off + metadata.data_len) > metadata.buf_len {
+                return false;
+            }
+
+            nb_segs -= 1;
+            pkt_len -= metadata.data_len as u32;
+
+            // Check if we've reached the last segment.
+            if let Some(md) = metadata.next {
+                // No, so advance to the next segment.
+                metadata = unsafe { md.as_ref() };
+            } else {
+                // Yes, so break out of the loop.
+                break;
+            }
+        }
+
+        // Check if traversed all segments.
+        if nb_segs != 0 {
+            return false;
+        }
+
+        // Check if we traversed all bytes.
+        if pkt_len != 0 {
+            return false;
+        }
+
+        true
     }
 }
 
@@ -358,6 +439,11 @@ impl DemiBuffer {
     // return an error, rather than remove the remaining bytes from subsequent segments in the chain.  This is to match
     // the behavior of DPDK's rte_pktmbuf_adj() routine.
     pub fn adjust(&mut self, nbytes: usize) -> Result<(), Fail> {
+        // Ensure that this is a header segment.
+        if !self.is_header_segment() {
+            return Err(Fail::new(libc::EINVAL, "cannot adjust non-header segment"));
+        }
+
         // TODO: Review having this "match", since MetaData and MBuf are laid out the same, these are equivalent cases.
         match self.get_tag() {
             Tag::Heap => {
@@ -395,6 +481,11 @@ impl DemiBuffer {
     // return an error, rather than remove the remaining bytes from subsequent segments in the chain.  This is to match
     // the behavior of DPDK's rte_pktmbuf_trim() routine.
     pub fn trim(&mut self, nbytes: usize) -> Result<(), Fail> {
+        // Ensure that this is a header segment.
+        if !self.is_header_segment() {
+            return Err(Fail::new(libc::EINVAL, "cannot trim non-header segment"));
+        }
+
         // TODO: Review having this "match", since MetaData and MBuf are laid out the same, these are equivalent cases.
         match self.get_tag() {
             Tag::Heap => {
@@ -644,6 +735,33 @@ impl DemiBuffer {
             },
         }
     }
+
+    ///
+    /// **Description**
+    ///
+    /// Checks if the target [DemiBuffer] refers to a header segment or not.
+    ///
+    /// **Return Value**
+    ///
+    /// If the target [DemiBuffer] refers to a header segment, `true` is returned. Otherwise, `false` is returned
+    /// instead.
+    ///
+    /// **Additional Information**
+    ///
+    /// This function should match the behavior provided by DPDK's `rte_mbuf_check()` function.
+    ///
+    fn is_header_segment(&self) -> bool {
+        match self.get_tag() {
+            Tag::Heap => self.as_metadata().is_header_segment(),
+            #[cfg(feature = "libdpdk")]
+            Tag::Dpdk => {
+                // Safety: it is safe to dereference "mbuf_ptr" as it is known to point to a valid MBuf.
+                let mbuf: *const rte_mbuf = self.as_mbuf();
+                let mut reason: *const core::ffi::c_char = null_mut();
+                unsafe { dpdk_rs::rte_mbuf_check(mbuf, 1, &mut reason as *mut *const core::ffi::c_char) == 0 }
+            },
+        }
+    }
 }
 
 // ----------------
@@ -871,6 +989,9 @@ impl DerefMut for DemiBuffer {
 /// Drop Trait Implementation for `DemiBuffer`.
 impl Drop for DemiBuffer {
     fn drop(&mut self) {
+        // Ensure that this is a header segment.
+        debug_assert!(self.is_header_segment(), "cannot drop non-header segment");
+
         match self.get_tag() {
             Tag::Heap => {
                 // This might be a chain of buffers.  If so, we'll walk the list.
