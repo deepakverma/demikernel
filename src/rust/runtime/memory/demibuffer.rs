@@ -537,6 +537,7 @@ impl DemiBuffer {
     /// - The target [DemiBuffer] must be a single buffer segment (not a chain).
     /// - The target [DemiBuffer] should be large enough to hold `offset`.
     ///
+    #[deprecated]
     pub fn split_back(&mut self, offset: usize) -> Result<Self, Fail> {
         self.split(false, offset)
     }
@@ -559,6 +560,7 @@ impl DemiBuffer {
     /// - The target [DemiBuffer] must be a single buffer segment (not a chain).
     /// - The target [DemiBuffer] should be large enough to hold `offset`.
     ///
+    #[deprecated]
     pub fn split_front(&mut self, offset: usize) -> Result<Self, Fail> {
         self.split(true, offset)
     }
@@ -574,6 +576,7 @@ impl DemiBuffer {
     /// On successful completion, a new [DemiBuffer] containing the data removed from the original buffer is returned.
     /// On failure, a [Fail] structure encoding the failure condition is returned instead.
     ///
+    #[deprecated]
     fn split(&mut self, split_front: bool, offset: usize) -> Result<Self, Fail> {
         // Check if this is a multi-segment buffer.
         if self.is_multi_segment() {
