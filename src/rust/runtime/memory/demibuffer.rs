@@ -721,19 +721,9 @@ impl DemiBuffer {
     ///
     /// If the target [DemiBuffer] has multiple segments, `true` is returned. Otherwise, `false` is returned instead.
     ///
+    #[deprecated]
     fn is_multi_segment(&self) -> bool {
-        match self.get_tag() {
-            Tag::Heap => {
-                let md_front: &MetaData = self.as_metadata();
-                md_front.nb_segs != 1
-            },
-            #[cfg(feature = "libdpdk")]
-            Tag::Dpdk => {
-                let mbuf: *const rte_mbuf = self.as_mbuf();
-                // Safety: The `mbuf` dereferences in this block are safe, as it is aligned and dereferenceable.
-                unsafe { (*mbuf).nb_segs != 1 }
-            },
-        }
+        self.is_header_segment()
     }
 
     ///
