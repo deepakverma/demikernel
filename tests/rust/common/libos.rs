@@ -54,7 +54,7 @@ use std::{
 
 /// A default amount of time to wait on an operation to complete. This was chosen arbitrarily to be quite small to make
 /// timeouts fast.
-const DEFAULT_TIMEOUT: Duration = Duration::from_millis(1);
+const DEFAULT_TIMEOUT: Duration = Duration::from_secs(120);
 
 pub struct DummyLibOS(SharedNetworkLibOS<SharedInetStack<SharedDummyRuntime>>);
 

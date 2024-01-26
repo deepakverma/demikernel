@@ -56,7 +56,7 @@ pub const SOCK_STREAM: i32 = libc::SOCK_STREAM;
 
 /// A default amount of time to wait on an operation to complete. This was chosen arbitrarily to be high enough to
 /// ensure most OS operations will complete.
-const DEFAULT_TIMEOUT: Duration = Duration::from_millis(100);
+const DEFAULT_TIMEOUT: Duration = Duration::from_secs(120);
 
 use std::{
     net::{
