@@ -10,7 +10,7 @@ use crate::{
     demikernel::config::Config,
     runtime::{
         fail::Fail,
-        limits,
+        limits::{self, POP_SIZE_MAX},
         memory::DemiBuffer,
         network::transport::NetworkTransport,
         scheduler::{
@@ -59,6 +59,8 @@ use ::std::{
 // Set to the max number of file descriptors that can be open without increasing the number on Linux.
 const EPOLL_BATCH_SIZE: usize = 1024;
 
+const BUFFER_POOL_SIZE: usize = 4;
+
 //======================================================================================================================
 // Structures
 //======================================================================================================================
@@ -75,6 +77,11 @@ pub struct ActiveSocketData {
     socket: Socket,
     send_queue: AsyncQueue<(Option<SocketAddr>, DemiBuffer, YielderHandle)>,
     recv_queue: AsyncQueue<Result<(Option<SocketAddr>, DemiBuffer), Fail>>,
+    buffer_pool: DemiBufferPool,
+}
+
+struct DemiBufferPool {
+    pool: Vec<DemiBuffer>,
 }
 
 /// This structure represents the metadata for a socket.
@@ -106,6 +113,29 @@ type SockDesc = <SharedCatnapTransport as NetworkTransport>::SocketDescriptor;
 //======================================================================================================================
 // Implementations
 //======================================================================================================================
+impl DemiBufferPool {
+    fn new(size: usize) -> Self {
+        let mut pool = Vec::with_capacity(size);
+        for _ in 0..size {
+            pool.push(DemiBuffer::new(limits::POP_SIZE_MAX as u16));
+        }
+        Self { pool }
+    }
+
+    fn get(&mut self) -> DemiBuffer {
+        match self.pool.pop() {
+            Some(buffer) => buffer,
+            _=> panic!("no more demibuffers in the pool"),
+            //None => DemiBuffer::new(limits::POP_SIZE_MAX as u16),
+        }
+    }
+
+    fn put_back(&mut self, mut buffer: DemiBuffer) {
+        buffer.reset()
+        .expect("could not reset buffer");
+        self.pool.push(buffer);
+    }
+}
 
 /// A passive listening socket that polls for incoming connections and accepts them.
 impl PassiveSocketData {
@@ -185,21 +215,30 @@ impl ActiveSocketData {
     /// queue.
     /// TODO: Incoming queue should possibly be byte oriented.
     pub fn poll_recv(&mut self) {
-        let mut buf: DemiBuffer = DemiBuffer::new(limits::POP_SIZE_MAX as u16);
+        let mut buf: DemiBuffer = self.buffer_pool.get();
         match self
             .socket
             .recv_from(unsafe { std::slice::from_raw_parts_mut(buf.as_mut_ptr() as *mut MaybeUninit<u8>, buf.len()) })
         {
             // Operation completed.
             Ok((nbytes, socketaddr)) => {
-                if let Err(e) = buf.trim(buf.len() - nbytes as usize) {
-                    self.recv_queue.push(Err(e));
-                } else {
-                    trace!("data popped ({:?} bytes)", nbytes);
-                    self.recv_queue.push(Ok((socketaddr.as_socket(), buf)));
+                if nbytes <= 0 {
+                    self.buffer_pool.put_back(buf);
+                    let errno: i32 = libc::EBADF;
+                    let cause: String = format!("failed to receive on socket: {:?}", errno);
+                    self.recv_queue.push(Err(Fail::new(0, &cause)));
+                } else{
+                    if let Err(e) = buf.trim(buf.len() - nbytes as usize) {
+                        self.recv_queue.push(Err(e));
+                        self.buffer_pool.put_back(buf);
+                    } else {
+                        trace!("data popped ({:?} bytes)", nbytes);
+                        self.recv_queue.push(Ok((socketaddr.as_socket(), buf)));
+                    }
                 }
             },
             Err(e) => {
+                self.buffer_pool.put_back(buf);
                 let errno: i32 = get_libc_err(e);
                 if !DemiRuntime::should_retry(errno) {
                     let cause: String = format!("failed to receive on socket: {:?}", errno);
@@ -240,7 +279,12 @@ impl ActiveSocketData {
         // We didn't consume all of the incoming data.
         if !incoming_buf.is_empty() {
             self.recv_queue.push_front(Ok((addr, incoming_buf)));
-        }
+        } else {
+            incoming_buf
+                .reset()
+                .expect("cannot reset the incoming buffer to place it back in the pool");
+            self.buffer_pool.put_back(incoming_buf);
+        } 
         Ok(addr)
     }
 }
@@ -257,6 +301,7 @@ impl SharedSocketData {
             socket,
             send_queue: AsyncQueue::default(),
             recv_queue: AsyncQueue::default(),
+            buffer_pool: DemiBufferPool::new(BUFFER_POOL_SIZE)
         })))
     }
 
@@ -284,6 +329,7 @@ impl SharedSocketData {
             socket,
             send_queue: AsyncQueue::default(),
             recv_queue: AsyncQueue::default(),
+            buffer_pool: DemiBufferPool::new(BUFFER_POOL_SIZE)
         }));
     }
 
@@ -471,31 +517,38 @@ impl SharedCatnapTransport {
             };
             while let Some(event) = events.pop() {
                 let offset: usize = event.u64 as usize;
+                let socket = self.socket_table
+                                .get_mut(offset)
+                                .expect("should have allocated this when epoll was registered");
                 if event.events & (libc::EPOLLIN as u32) != 0 {
                     // Wake pop.
-                    self.socket_table
-                        .get_mut(offset)
-                        .expect("should have allocated this when epoll was registered")
-                        .poll_in();
+                    socket.poll_in();
                 }
                 if event.events & (libc::EPOLLOUT as u32) != 0 {
                     // Wake push.
-                    self.socket_table
-                        .get_mut(offset)
-                        .expect("should have allocated this when epoll was registered")
-                        .poll_out();
+                    socket.poll_out();
                 }
                 if event.events & (libc::EPOLLERR as u32 | libc::EPOLLHUP as u32) != 0 {
                     // Wake both push and pop.
-                    self.socket_table
-                        .get_mut(offset)
-                        .expect("should have allocated this when epoll was registered")
-                        .poll_in();
-                    self.socket_table
-                        .get_mut(offset)
-                        .expect("should have allocated this when epoll was registered")
-                        .poll_out();
-                }
+                    socket.poll_in();
+                    socket.poll_out();
+                    
+                    // Unregister the socket from epoll.
+                    let underlying_socket = socket.get_mut_socket();
+                    let fd = underlying_socket.as_raw_fd();
+                    let mut event = libc::epoll_event {
+                        events: libc::EPOLLIN as u32,
+                        u64: 0 as u64,
+                    };
+                    let ret = unsafe { libc::epoll_ctl(self.epoll_fd, libc::EPOLL_CTL_DEL, fd, &mut event) };
+                    if ret < 0 {
+                        eprintln!("Failed to unregister socket from epoll: {}", io::Error::last_os_error());
+                    }
+                    let result = unsafe { libc::shutdown(fd, libc::SHUT_RDWR)};
+                    if result < 0 {
+                        eprintln!("Failed to shutdown socket: {}", io::Error::last_os_error());
+                    }              
+                  }
             }
             match yielder.yield_once().await {
                 Ok(()) => continue,

@@ -390,6 +390,20 @@ impl DemiBuffer {
         Ok(())
     }
 
+    #[cfg(all(feature = "catnap-libos"))]
+    /// Resets the `DemiBuffer` to its initial state for reuse
+    pub fn reset(&mut self) -> Result<(), Fail> {
+        match self.get_tag() {
+            Tag::Heap => {
+                let metadata: &mut MetaData = self.as_metadata();
+                metadata.data_off = 0;
+                metadata.pkt_len = metadata.buf_len as u32;
+                metadata.data_len = metadata.buf_len;
+            },
+        }
+        Ok(())
+    }
+
     /// Removes `nbytes` bytes from the end of the `DemiBuffer` chain.
     // Note: If `nbytes` is greater than the length of the last segment in the chain, then this function will fail and
     // return an error, rather than remove the remaining bytes from subsequent segments in the chain.  This is to match
