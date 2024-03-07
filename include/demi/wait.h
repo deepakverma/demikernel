@@ -37,6 +37,8 @@ extern "C"
     extern int demi_wait_any(demi_qresult_t *qr_out, int *ready_offset, const demi_qtoken_t qts[], int num_qts,
                              const struct timespec *timeout);
 
+    extern int demi_wait_many(demi_qresult_t results[], int max_results, int ready_offset[], const demi_qtoken_t qts[], int num_qts, const struct timespec *timeout, int *numofevents);
+
 #ifdef __cplusplus
 }
 #endif

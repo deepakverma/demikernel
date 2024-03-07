@@ -550,8 +550,12 @@ impl SharedCatnapTransport {
                     }              
                   }
             }
+            
             match yielder.yield_once().await {
-                Ok(()) => continue,
+                Ok(()) => {
+                    std::thread::yield_now();
+                    continue;
+                },
                 Err(_) => break,
             }
         }

@@ -622,6 +622,81 @@ pub extern "C" fn demi_wait_any(
     }
 }
 
+#[no_mangle]
+pub extern "C" fn demi_wait_many(
+    qr_out: *mut demi_qresult_t,
+    max_results:c_int,
+    ready_offset: *mut c_int,
+    qts: *mut demi_qtoken_t,
+    num_qts: c_int,
+    timeout: *const libc::timespec,
+    num_events: *mut c_int
+) -> c_int {
+
+    trace!(
+        "demi_wait_many() {:?} {:?} {:?} {:?} {:?}",
+        qr_out,
+        ready_offset,
+        qts,
+        num_qts,
+        timeout
+    );
+
+    // Check for invalid storage location for queue result.
+    if qr_out.is_null() {
+        warn!("qr_out is a null pointer");
+        return libc::EINVAL;
+    }
+
+    // Check arguments.
+    if num_qts < 0 {
+        return libc::EINVAL;
+    }
+    unsafe {*num_events = 0;}
+    // Get queue tokens.
+    let qts: &[QToken] = unsafe { slice::from_raw_parts(qts as *const QToken, num_qts as usize) };
+
+    // Convert timespec to Duration.
+    let duration: Option<Duration> = if timeout.is_null() {
+        None
+    } else {
+        // Safety: We have to trust that our user is providing a valid timeout pointer for us to dereference.
+        Some(unsafe { Duration::new((*timeout).tv_sec as u64, (*timeout).tv_nsec as u32) })
+    };
+
+    // Issue wait_any operation.
+    let ret: Result<i32, Fail> = do_syscall(|libos| match libos.wait_many(&qts, max_results, duration) {
+        Ok(vec) => {
+            let len = vec.len() as c_int;
+            if len > 0 {
+                unsafe {
+                    for (i, (ix, qr)) in vec.into_iter().enumerate() {
+                        *qr_out.offset(i as isize) = qr;
+                        *ready_offset.offset(i as isize) = ix as c_int;
+                    }
+                    *num_events= len;
+                }
+            }
+            len
+        },
+        Err(e) => {
+            trace!("demi_wait_any() failed: {:?}", e);
+            e.errno
+        },
+    });
+    
+    match ret {
+        Ok(ret) => ret,
+        Err(e) => {
+            // unsafe {
+            //     Errno::last().set(e.errno);
+            // }
+            -1
+        },
+    }
+}
+
+
 //======================================================================================================================
 // sgaalloc
 //======================================================================================================================

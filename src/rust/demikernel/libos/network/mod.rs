@@ -281,6 +281,38 @@ impl NetworkLibOSWrapper {
         }
     }
 
+    pub fn wait_many(&mut self, qts: &[QToken], max_results: i32, timeout: Option<Duration>) -> Result<Vec<(usize, demi_qresult_t)>, Fail> {
+        trace!("wait_many(): qts={:?}, timeout={:?}", qts, timeout);
+    
+        let start: Option<Instant> = timeout.filter(|&t| t != Duration::from_secs(0)).map(|_| Instant::now());
+    
+        let mut results = Vec::new();
+        loop {
+            self.poll();
+
+            for (i, &qt) in qts.iter().enumerate() {
+                if self.has_completed(qt)? {
+                    results.push((i, self.get_result(qt)?));
+                    if results.len() >= max_results as usize { 
+                        break;
+                    }
+                }
+            }
+
+            if !results.is_empty() {
+                return Ok(results);
+            }
+    
+            if let Some(timeout) = timeout {
+                if timeout == Duration::from_secs(0)
+                    || Instant::now().duration_since(start.expect("start should be set if timeout is")) > timeout
+                {
+                    return Err(Fail::new(libc::ETIMEDOUT, "timer expired"));
+                }
+            }
+        }
+    }
+
     /// Waits for any operation in an I/O queue.
     pub fn poll(&mut self) {
         match self {

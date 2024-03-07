@@ -164,7 +164,7 @@ profiler = []
 # Build profile used for releases.
 [profile.release]
 opt-level = 3            # Enable all compiler optimizations.
-debug = false            # Do not include any debug info in the binary.
+debug = true            # Do not include any debug info in the binary.
 debug-assertions = false # Do not include any debug assertions in the binary.
 overflow-checks = false  # Do not check for overflows at runtime.
 lto = "fat"              # Perform link time optimizations across all dependencies (overridden).

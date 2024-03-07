@@ -392,6 +392,15 @@ impl LibOS {
         }
     }
 
+    pub fn wait_many(&mut self, qts: &[QToken], max_results: i32, timeout: Option<Duration>) -> Result<Vec<(usize, demi_qresult_t)>, Fail> {
+        #[cfg(feature = "profiler")]
+        timer!("demikernel::wait_any");
+        match self {
+            LibOS::NetworkLibOS(libos) => libos.wait_many(qts, max_results, timeout),
+            LibOS::MemoryLibOS(libos) => panic!("not implemented")
+        }
+    }
+
     /// Allocates a scatter-gather array.
     pub fn sgaalloc(&mut self, size: usize) -> Result<demi_sgarray_t, Fail> {
         let result: Result<demi_sgarray_t, Fail> = {
